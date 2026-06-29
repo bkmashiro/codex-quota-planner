@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codex-quota-planner"
+version = "0.1.0"
+description = "Plan and visualize ChatGPT/Codex quota usage across 5-hour and weekly windows."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "codex-quota-planner contributors" }]
+keywords = ["codex", "quota", "planner", "cli", "chatgpt"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/bkmashiro/codex-quota-planner"
+Repository = "https://github.com/bkmashiro/codex-quota-planner"
+Issues = "https://github.com/bkmashiro/codex-quota-planner/issues"
+
+[project.scripts]
+codex-quota-planner = "codex_quota_planner:main"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/codex_quota_planner.py"]
+sources = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
