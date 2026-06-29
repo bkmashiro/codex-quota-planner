@@ -35,7 +35,54 @@ CODEX_SESSIONS = HOME / ".codex" / "sessions"
 CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME", str(HOME / ".cache")))
 STATE_PATH = Path(os.environ.get("CODEX_QUOTA_STATE", str(CACHE_HOME / "codex-quota-planner" / "state.json")))
 USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
-LOCAL_TZ = ZoneInfo(os.environ.get("CODEX_QUOTA_TZ", "Europe/London"))
+
+
+def _valid_timezone_name(name: str | None) -> str | None:
+    if not name:
+        return None
+    # POSIX TZ strings such as "PST8PDT" are not IANA zone names; keep the
+    # planner output stable by accepting only names ZoneInfo can load.
+    try:
+        ZoneInfo(name)
+    except Exception:
+        return None
+    return name
+
+
+def _iana_from_localtime_symlink(path: Path) -> str | None:
+    try:
+        if not path.is_symlink():
+            return None
+        parts = path.resolve(strict=False).parts
+    except OSError:
+        return None
+    if "zoneinfo" not in parts:
+        return None
+    idx = parts.index("zoneinfo") + 1
+    if idx >= len(parts):
+        return None
+    if parts[idx] in {"posix", "right"}:
+        idx += 1
+    return _valid_timezone_name("/".join(parts[idx:]))
+
+
+def resolve_timezone_name(environ: dict[str, str] | None = None, localtime_path: Path = Path("/etc/localtime")) -> str:
+    """Resolve the most convenient display/planning timezone.
+
+    Explicit `CODEX_QUOTA_TZ` wins. Otherwise prefer the user's process/system
+    timezone (`TZ`, then `/etc/localtime` symlink). Fall back to UTC instead of a
+    project-specific timezone so new users do not have to configure anything.
+    """
+    env = os.environ if environ is None else environ
+    for key in ("CODEX_QUOTA_TZ", "TZ"):
+        if tz := _valid_timezone_name(env.get(key)):
+            return tz
+    if tz := _iana_from_localtime_symlink(localtime_path):
+        return tz
+    return "UTC"
+
+
+LOCAL_TZ = ZoneInfo(resolve_timezone_name())
 LONDON = LOCAL_TZ  # backward-compatible internal name
 USER_AGENT = "Mozilla/5.0 (codex-quota-planner)"
 

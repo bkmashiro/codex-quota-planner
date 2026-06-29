@@ -1,88 +1,90 @@
-# Sudoeng / Codex Quota Planner
+# 速蹬 / Codex Quota Planner
 
-[简体中文](README.zh-CN.md)
+[English](README.md)
 
-**Sudoeng** (速蹬, “quota sprint”) is an unofficial CLI for planning ChatGPT/Codex quota usage across the rolling **5-hour primary window** and the **weekly secondary window**.
+**速蹬** 是一个非官方 CLI，用来规划 ChatGPT/Codex 配额在滚动 **5 小时 primary 窗口** 和 **weekly secondary 窗口** 之间的消耗节奏。
 
-It can:
+它可以：
 
-- read the local Codex CLI OAuth session (`~/.codex/auth.json`) to query quota usage;
-- estimate weekly burn per 5-hour window from local Codex session logs;
-- generate either **latest-safe** plans or **eager / Sudoeng** plans;
-- model reset credits that reset both weekly and 5-hour limits;
-- render text, JSON, or ASCII timelines for automation and reuse.
+- 读取本机 Codex CLI OAuth 会话（`~/.codex/auth.json`）并查询当前配额；
+- 根据本地 Codex session logs 估算“每 5 小时窗口消耗多少 weekly”；
+- 生成两种计划：
+  - **latest-safe**：尽量晚开始，但保证来得及；
+  - **eager / 速蹬模式**：从当前可用窗口尽早开始消耗；
+- 模拟 reset credits：重置 weekly + 5h 窗口；
+- 输出 text、JSON 或 ASCII timeline，方便人看，也方便其他工具二次开发。
 
-> Unofficial project: it relies on observed Codex CLI endpoints and local log formats, which may change upstream.
+> 非官方项目：接口和本地日志格式来自对 Codex CLI 行为的观察，未来如果上游变化，本工具可能需要同步更新。
 
-## Install
+## 安装
 
-From a checkout:
+从 checkout 安装：
 
 ```bash
 python -m pip install -e .
 ```
 
-Or run directly:
+或者直接运行：
 
 ```bash
 python src/codex_quota_planner.py --status
 ```
 
-## Quick usage
+## 快速使用
 
-Current status:
+查看当前状态：
 
 ```bash
 codex-quota-planner --status
 ```
 
-Latest-safe plan: wait until the latest safe start time, but still leave enough usable capacity:
+生成默认计划：latest-safe，也就是“尽量晚开始，但不误事”：
 
 ```bash
 codex-quota-planner --plan
 ```
 
-Eager / Sudoeng mode: start draining as soon as possible and include a timeline:
+开启“速蹬模式”：从现在开始尽量早消耗，并显示 timeline：
 
 ```bash
 codex-quota-planner --plan --eager --timeline --target 2026-07-01
 ```
 
-Only show a specific lane/limit:
+只看某个 lane / limit：
 
 ```bash
 codex-quota-planner --plan --limit Spark --target 2026-07-01
 ```
 
-Consider reset credits:
+考虑 reset credit：
 
 ```bash
 codex-quota-planner --plan --limit Spark --reset-cards 1
 ```
 
-Machine-readable output:
+机器可读输出，适合接给其他脚本或 UI：
 
 ```bash
 codex-quota-planner --plan --format json --target 2026-07-01 > plan.json
 codex-quota-planner --status --format json > status.json
 ```
 
-ASCII calendar/timeline output:
+ASCII calendar/timeline 输出：
 
 ```bash
 codex-quota-planner --plan --format timeline --timeline-width 96 --target 2026-07-01
 ```
 
-Legend:
+图例：
 
-- `D` = drain/use quota
-- `R` = reset credit use
-- `.` = wait/idle
-- `|` = 00/06/12/18 guide marks
+- `D` = 消耗配额
+- `R` = 使用 reset credit
+- `.` = 等待
+- `|` = 00/06/12/18 时间刻度
 
-## Redacted output samples
+## 脱敏输出样例
 
-The following samples are manually redacted examples showing output shape only; they contain no real account, token, local path, or full usage history.
+以下样例是手写脱敏数据，只展示格式；不包含真实账号、token、设备路径或完整使用记录。
 
 ### Text plan
 
@@ -173,36 +175,34 @@ Example-Codex-Lane
 }
 ```
 
-## Configuration
+## 配置
 
-Environment variables:
-
-| Variable | Default | Meaning |
+| 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `CODEX_QUOTA_TZ` | system/user timezone, fallback `UTC` | Override timezone for sleep blocks and rendered times |
-| `CODEX_QUOTA_SLEEP` | `02:00-10:00` | Sleep blocks excluded from usable capacity |
-| `CODEX_QUOTA_STATE` | `~/.cache/codex-quota-planner/state.json` | Local snapshot cache path |
-| `CODEX_QUOTA_HISTORY_DAYS` | `21` | Days of local Codex logs used for estimates |
-| `CODEX_QUOTA_WARN_SURPLUS_PCT` | `8` | Alert threshold |
-| `CODEX_QUOTA_URGENT_SURPLUS_PCT` | `2` | Urgent alert threshold |
-| `CODEX_QUOTA_MIN_REMAINING_PCT` | `3` | Ignore tiny remaining weekly balances below this |
+| `CODEX_QUOTA_TZ` | 用户/系统默认时区，失败时 fallback `UTC` | 覆盖 sleep block 和输出时间用的时区 |
+| `CODEX_QUOTA_SLEEP` | `02:00-10:00` | 从可用容量里排除的睡眠时段 |
+| `CODEX_QUOTA_STATE` | `~/.cache/codex-quota-planner/state.json` | 本地 snapshot 缓存路径 |
+| `CODEX_QUOTA_HISTORY_DAYS` | `21` | 用多少天本地 Codex logs 估算速率 |
+| `CODEX_QUOTA_WARN_SURPLUS_PCT` | `8` | warn 阈值 |
+| `CODEX_QUOTA_URGENT_SURPLUS_PCT` | `2` | urgent 阈值 |
+| `CODEX_QUOTA_MIN_REMAINING_PCT` | `3` | 忽略很小的 weekly 剩余额 |
 
-Timezone resolution order:
+时区解析顺序：
 
-1. explicit `CODEX_QUOTA_TZ`;
-2. process/user `TZ`;
-3. system `/etc/localtime` symlink when it contains an IANA zone name;
-4. `UTC` fallback.
+1. 显式 `CODEX_QUOTA_TZ`；
+2. 进程/用户 `TZ`；
+3. 系统 `/etc/localtime` symlink（如果能解析出 IANA zone name）；
+4. fallback 到 `UTC`。
 
-Legacy `CODEX_WEEKLY_DRAIN_*` variables are also accepted for compatibility.
+兼容旧的 `CODEX_WEEKLY_DRAIN_*` 环境变量。
 
-## Privacy and security
+## 隐私与安全
 
-The CLI reads the local Codex OAuth access token only to make the API request. It does **not** print tokens, refresh tokens, cookies, account IDs, or full user identifiers. JSON output intentionally exposes only planning/status data.
+本工具只在本地读取 Codex OAuth access token 来发起 API 请求；不会打印 token、refresh token、cookie、account ID 或完整用户标识。JSON 输出也只保留规划和状态字段，避免暴露鉴权信息。
 
-Before publishing logs or screenshots, still review them for project names, task details, or other context you consider private.
+发布日志或截图前，仍建议自己再检查一次是否包含项目名、任务内容或其他你认为敏感的上下文。
 
-## Development
+## 开发
 
 ```bash
 python -m unittest -v tests/test_planner.py

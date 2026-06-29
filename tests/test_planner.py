@@ -1,15 +1,41 @@
 #!/usr/bin/env python3
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 
 import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import codex_quota_planner as w
 
 
 def ts(s: str) -> float:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+
+
+class TimezoneResolutionTests(unittest.TestCase):
+    def test_codex_quota_tz_overrides_everything(self):
+        self.assertEqual(
+            w.resolve_timezone_name({"CODEX_QUOTA_TZ": "Asia/Tokyo", "TZ": "America/New_York"}, localtime_path=Path("/missing")),
+            "Asia/Tokyo",
+        )
+
+    def test_tz_env_is_default_when_codex_quota_tz_absent(self):
+        self.assertEqual(
+            w.resolve_timezone_name({"TZ": "America/Los_Angeles"}, localtime_path=Path("/missing")),
+            "America/Los_Angeles",
+        )
+
+    def test_iana_zone_is_inferred_from_localtime_symlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "usr" / "share" / "zoneinfo" / "Europe" / "Paris"
+            target.parent.mkdir(parents=True)
+            target.write_text("")
+            link = root / "etc" / "localtime"
+            link.parent.mkdir()
+            link.symlink_to(target)
+            self.assertEqual(w.resolve_timezone_name({}, localtime_path=link), "Europe/Paris")
 
 
 class PlanModelTests(unittest.TestCase):
