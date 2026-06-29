@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "codex-quota-planner"
 version = "0.1.0"
-description = "Plan and visualize ChatGPT/Codex quota usage across 5-hour and weekly windows."
+description = "速蹬: plan and visualize ChatGPT/Codex quota usage across 5-hour and weekly windows."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
