@@ -82,8 +82,6 @@ Legend:
 
 ## Redacted output samples
 
-The following samples are manually redacted examples showing output shape only; they contain no real account, token, local path, or full usage history.
-
 ### Text plan
 
 ```text
@@ -199,8 +197,6 @@ Legacy `CODEX_WEEKLY_DRAIN_*` variables are also accepted for compatibility.
 ## Privacy and security
 
 The CLI reads the local Codex OAuth access token only to make the API request. It does **not** print tokens, refresh tokens, cookies, account IDs, or full user identifiers. JSON output intentionally exposes only planning/status data.
-
-Before publishing logs or screenshots, still review them for project names, task details, or other context you consider private.
 
 ## Development
 

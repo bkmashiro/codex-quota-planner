@@ -84,8 +84,6 @@ codex-quota-planner --plan --format timeline --timeline-width 96 --target 2026-0
 
 ## 脱敏输出样例
 
-以下样例是手写脱敏数据，只展示格式；不包含真实账号、token、设备路径或完整使用记录。
-
 ### Text plan
 
 ```text
@@ -199,8 +197,6 @@ Example-Codex-Lane
 ## 隐私与安全
 
 本工具只在本地读取 Codex OAuth access token 来发起 API 请求；不会打印 token、refresh token、cookie、account ID 或完整用户标识。JSON 输出也只保留规划和状态字段，避免暴露鉴权信息。
-
-发布日志或截图前，仍建议自己再检查一次是否包含项目名、任务内容或其他你认为敏感的上下文。
 
 ## 开发
 
