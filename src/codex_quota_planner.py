@@ -418,10 +418,12 @@ def recent_session_paths(days: int) -> list[str]:
 def estimate_token_history(days: int) -> dict[str, Any]:
     events = 0
     total_last_tokens = 0
+    tokens_per_primary_pct: list[float] = []
     tokens_per_weekly_pct: list[float] = []
     for path in recent_session_paths(days):
-        prev = None
-        token_acc = 0
+        prev_by_limit: dict[str, dict[str, Any]] = {}
+        primary_token_acc_by_limit: dict[str, int] = {}
+        weekly_token_acc_by_limit: dict[str, int] = {}
         try:
             for line in open(path, "r", encoding="utf-8"):
                 try:
@@ -435,26 +437,57 @@ def estimate_token_history(days: int) -> dict[str, Any]:
                     continue
                 info = payload.get("info") or {}
                 last = info.get("last_token_usage") or {}
-                toks = int(safe_float(last.get("total_tokens"), 0.0))
-                token_acc += max(0, toks)
-                total_last_tokens += max(0, toks)
+                toks = max(0, int(safe_float(last.get("total_tokens"), 0.0)))
+                total_last_tokens += toks
                 events += 1
                 rl = payload.get("rate_limits") or {}
+                if not rl:
+                    continue
+                key = str(rl.get("limit_name") or rl.get("limit_id") or "default")
+                p = rl.get("primary") or {}
                 s = rl.get("secondary") or {}
-                cur = {"weekly_used": safe_float(s.get("used_percent"), math.nan), "weekly_reset": s.get("resets_at")}
-                if prev and cur["weekly_reset"] == prev["weekly_reset"]:
-                    ds = cur["weekly_used"] - prev["weekly_used"]
-                    if ds > 0 and token_acc > 0:
-                        tokens_per_weekly_pct.append(token_acc / ds)
-                        token_acc = 0
-                prev = cur
+                cur = {
+                    "primary_used": safe_float(p.get("used_percent"), math.nan),
+                    "primary_reset": p.get("resets_at"),
+                    "weekly_used": safe_float(s.get("used_percent"), math.nan),
+                    "weekly_reset": s.get("resets_at"),
+                }
+                prev = prev_by_limit.get(key)
+                if not prev:
+                    prev_by_limit[key] = cur
+                    primary_token_acc_by_limit[key] = 0
+                    weekly_token_acc_by_limit[key] = 0
+                    continue
+                primary_token_acc_by_limit[key] = primary_token_acc_by_limit.get(key, 0) + toks
+                weekly_token_acc_by_limit[key] = weekly_token_acc_by_limit.get(key, 0) + toks
+                if prev and cur["primary_reset"] == prev.get("primary_reset"):
+                    dp = cur["primary_used"] - safe_float(prev.get("primary_used"), math.nan)
+                    acc = primary_token_acc_by_limit.get(key, 0)
+                    if dp > 0 and acc > 0:
+                        tokens_per_primary_pct.append(acc / dp)
+                        primary_token_acc_by_limit[key] = 0
+                if prev and cur["weekly_reset"] == prev.get("weekly_reset"):
+                    ds = cur["weekly_used"] - safe_float(prev.get("weekly_used"), math.nan)
+                    acc = weekly_token_acc_by_limit.get(key, 0)
+                    if ds > 0 and acc > 0:
+                        tokens_per_weekly_pct.append(acc / ds)
+                        weekly_token_acc_by_limit[key] = 0
+                prev_by_limit[key] = cur
         except OSError:
             continue
+    primary_median = statistics.median(tokens_per_primary_pct) if tokens_per_primary_pct else None
+    weekly_median = statistics.median(tokens_per_weekly_pct) if tokens_per_weekly_pct else None
+    token_ratio = None
+    if primary_median and weekly_median and weekly_median > 0:
+        token_ratio = primary_median / weekly_median
     return {
         "events": events,
         "total_last_tokens": total_last_tokens,
-        "tokens_per_weekly_pct": statistics.median(tokens_per_weekly_pct) if tokens_per_weekly_pct else None,
+        "tokens_per_primary_pct": primary_median,
+        "tokens_per_primary_pct_samples": len(tokens_per_primary_pct),
+        "tokens_per_weekly_pct": weekly_median,
         "tokens_per_weekly_pct_samples": len(tokens_per_weekly_pct),
+        "token_derived_weekly_per_primary_ratio": token_ratio,
     }
 
 
@@ -465,10 +498,16 @@ def build_history(state: dict[str, Any], limits: list[LimitView], now: datetime,
     all_ratios: list[float] = []
     for lim in limits:
         ratio, samples = ratio_from_snapshots(snapshots, lim.key)
-        if ratio is not None:
+        if ratio is not None and samples >= 2:
             all_ratios.append(ratio)
         ratios_by_limit[lim.key] = {"weekly_per_primary_ratio": ratio, "ratio_samples": samples}
-    global_ratio = statistics.median(all_ratios) if all_ratios else DEFAULT_WEEKLY_PER_PRIMARY_RATIO
+    token_ratio = token_history.get("token_derived_weekly_per_primary_ratio")
+    if all_ratios:
+        global_ratio = statistics.median(all_ratios)
+    elif isinstance(token_ratio, (int, float)) and token_ratio > 0:
+        global_ratio = float(token_ratio)
+    else:
+        global_ratio = DEFAULT_WEEKLY_PER_PRIMARY_RATIO
     return {**token_history, "snapshots": len(snapshots), "global_weekly_per_primary_ratio": global_ratio, "ratios_by_limit": ratios_by_limit}
 
 

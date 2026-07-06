@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -36,6 +37,75 @@ class TimezoneResolutionTests(unittest.TestCase):
             link.parent.mkdir()
             link.symlink_to(target)
             self.assertEqual(w.resolve_timezone_name({}, localtime_path=link), "Europe/Paris")
+
+
+class HistoryModelTests(unittest.TestCase):
+    def test_token_history_estimates_weekly_per_primary_ratio_from_local_logs(self):
+        with tempfile.TemporaryDirectory() as td:
+            log = Path(td) / "session.jsonl"
+            events = [
+                # 100k tokens moves primary by 10%, but weekly by only 4%.
+                (100_000, 0.0, 0.0),
+                (100_000, 10.0, 4.0),
+                (100_000, 20.0, 8.0),
+            ]
+            with log.open("w", encoding="utf-8") as f:
+                for toks, primary_used, weekly_used in events:
+                    f.write(
+                        json.dumps(
+                            {
+                                "type": "event_msg",
+                                "payload": {
+                                    "type": "token_count",
+                                    "info": {"last_token_usage": {"total_tokens": toks}},
+                                    "rate_limits": {
+                                        "limit_id": "codex",
+                                        "primary": {"used_percent": primary_used, "resets_at": 1},
+                                        "secondary": {"used_percent": weekly_used, "resets_at": 2},
+                                    },
+                                },
+                            }
+                        )
+                        + "\n"
+                    )
+
+            old_recent = w.recent_session_paths
+            try:
+                w.recent_session_paths = lambda days: [str(log)]
+                history = w.estimate_token_history(21)
+            finally:
+                w.recent_session_paths = old_recent
+
+        self.assertAlmostEqual(history["tokens_per_primary_pct"], 10_000.0)
+        self.assertAlmostEqual(history["tokens_per_weekly_pct"], 25_000.0)
+        self.assertAlmostEqual(history["token_derived_weekly_per_primary_ratio"], 0.4)
+
+    def test_build_history_uses_token_derived_ratio_when_snapshot_samples_are_missing(self):
+        now = datetime.fromisoformat("2026-06-29T08:00:00+00:00")
+        lim = w.LimitView(
+            "default",
+            None,
+            {
+                "primary_window": {"used_percent": 0.0, "limit_window_seconds": 18000, "reset_at": now.timestamp() + 18000},
+                "secondary_window": {"used_percent": 10.0, "limit_window_seconds": 604800, "reset_at": now.timestamp() + 604800},
+            },
+        )
+        old_estimate = w.estimate_token_history
+        try:
+            w.estimate_token_history = lambda days: {
+                "events": 2,
+                "total_last_tokens": 200_000,
+                "tokens_per_primary_pct": 10_000.0,
+                "tokens_per_primary_pct_samples": 2,
+                "tokens_per_weekly_pct": 25_000.0,
+                "tokens_per_weekly_pct_samples": 2,
+                "token_derived_weekly_per_primary_ratio": 0.4,
+            }
+            history = w.build_history({}, [lim], now, 21)
+        finally:
+            w.estimate_token_history = old_estimate
+
+        self.assertAlmostEqual(history["global_weekly_per_primary_ratio"], 0.4)
 
 
 class PlanModelTests(unittest.TestCase):
