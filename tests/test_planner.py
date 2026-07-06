@@ -80,6 +80,46 @@ class HistoryModelTests(unittest.TestCase):
         self.assertAlmostEqual(history["tokens_per_weekly_pct"], 25_000.0)
         self.assertAlmostEqual(history["token_derived_weekly_per_primary_ratio"], 0.4)
 
+    def test_token_history_filters_to_current_plan_type(self):
+        with tempfile.TemporaryDirectory() as td:
+            log = Path(td) / "session.jsonl"
+            rows = [
+                ("prolite", 100_000, 0.0, 0.0),
+                ("prolite", 100_000, 10.0, 10.0),
+                ("pro", 100_000, 0.0, 0.0),
+                ("pro", 100_000, 10.0, 4.0),
+            ]
+            with log.open("w", encoding="utf-8") as f:
+                for plan_type, toks, primary_used, weekly_used in rows:
+                    f.write(
+                        json.dumps(
+                            {
+                                "type": "event_msg",
+                                "payload": {
+                                    "type": "token_count",
+                                    "info": {"last_token_usage": {"total_tokens": toks}},
+                                    "rate_limits": {
+                                        "limit_id": "codex",
+                                        "plan_type": plan_type,
+                                        "primary": {"used_percent": primary_used, "resets_at": 1},
+                                        "secondary": {"used_percent": weekly_used, "resets_at": 2},
+                                    },
+                                },
+                            }
+                        )
+                        + "\n"
+                    )
+
+            old_recent = w.recent_session_paths
+            try:
+                w.recent_session_paths = lambda days: [str(log)]
+                history = w.estimate_token_history(21, plan_type="pro")
+            finally:
+                w.recent_session_paths = old_recent
+
+        self.assertEqual(history["events"], 2)
+        self.assertAlmostEqual(history["token_derived_weekly_per_primary_ratio"], 0.4)
+
     def test_build_history_uses_token_derived_ratio_when_snapshot_samples_are_missing(self):
         now = datetime.fromisoformat("2026-06-29T08:00:00+00:00")
         lim = w.LimitView(
@@ -92,7 +132,7 @@ class HistoryModelTests(unittest.TestCase):
         )
         old_estimate = w.estimate_token_history
         try:
-            w.estimate_token_history = lambda days: {
+            w.estimate_token_history = lambda days, plan_type=None: {
                 "events": 2,
                 "total_last_tokens": 200_000,
                 "tokens_per_primary_pct": 10_000.0,

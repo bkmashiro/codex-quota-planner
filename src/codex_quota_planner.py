@@ -415,7 +415,7 @@ def recent_session_paths(days: int) -> list[str]:
     return sorted(out)
 
 
-def estimate_token_history(days: int) -> dict[str, Any]:
+def estimate_token_history(days: int, plan_type: str | None = None) -> dict[str, Any]:
     events = 0
     total_last_tokens = 0
     tokens_per_primary_pct: list[float] = []
@@ -438,11 +438,13 @@ def estimate_token_history(days: int) -> dict[str, Any]:
                 info = payload.get("info") or {}
                 last = info.get("last_token_usage") or {}
                 toks = max(0, int(safe_float(last.get("total_tokens"), 0.0)))
-                total_last_tokens += toks
-                events += 1
                 rl = payload.get("rate_limits") or {}
                 if not rl:
                     continue
+                if plan_type and rl.get("plan_type") != plan_type:
+                    continue
+                total_last_tokens += toks
+                events += 1
                 key = str(rl.get("limit_name") or rl.get("limit_id") or "default")
                 p = rl.get("primary") or {}
                 s = rl.get("secondary") or {}
@@ -491,9 +493,9 @@ def estimate_token_history(days: int) -> dict[str, Any]:
     }
 
 
-def build_history(state: dict[str, Any], limits: list[LimitView], now: datetime, days: int) -> dict[str, Any]:
+def build_history(state: dict[str, Any], limits: list[LimitView], now: datetime, days: int, plan_type: str | None = None) -> dict[str, Any]:
     snapshots = update_snapshots(state, limits, now)
-    token_history = estimate_token_history(days)
+    token_history = estimate_token_history(days, plan_type=plan_type)
     ratios_by_limit: dict[str, dict[str, Any]] = {}
     all_ratios: list[float] = []
     for lim in limits:
@@ -1004,7 +1006,7 @@ def main(argv: list[str]) -> int:
         if not limits:
             print(f"Codex weekly drain monitor error: no limit/lane matching {args.limit!r}")
             return 0
-    history = build_history(state, limits, now, args.history_days)
+    history = build_history(state, limits, now, args.history_days, plan_type=usage.get("plan_type"))
     analyses = [analyze_limit(lim, history, now, sleep_blocks) for lim in limits]
     state["last_checked_at"] = now.isoformat()
     state["last_error"] = ""
